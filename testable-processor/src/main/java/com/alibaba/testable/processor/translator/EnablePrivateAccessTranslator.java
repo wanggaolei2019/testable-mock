@@ -1,18 +1,28 @@
 package com.alibaba.testable.processor.translator;
 
-import com.alibaba.testable.processor.constant.ConstPool;
 import com.alibaba.testable.processor.generator.PrivateAccessStatementGenerator;
+import com.alibaba.testable.processor.model.MemberRecord;
 import com.alibaba.testable.processor.model.MemberType;
+import com.alibaba.testable.processor.model.Parameters;
 import com.alibaba.testable.processor.model.TestableContext;
+import com.alibaba.testable.processor.util.PathUtil;
+import com.sun.tools.javac.code.Symbol;
 import com.sun.tools.javac.tree.JCTree.*;
 import com.sun.tools.javac.util.ListBuffer;
 import com.sun.tools.javac.util.Name;
 
+import java.io.File;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
+import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLClassLoader;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+
+import static com.alibaba.testable.processor.constant.ConstPool.TEST_POSTFIX;
 
 /**
  * Travel AST
@@ -20,6 +30,11 @@ import java.net.URLClassLoader;
  * @author flin
  */
 public class EnablePrivateAccessTranslator extends BaseTranslator {
+
+    private static final String IDEA_PATHS_SELECTOR = "idea.paths.selector";
+    private static final String USER_DIR = "user.dir";
+    private static final String GRADLE_CLASS_FOLDER = "/build/classes/java/main/";
+    private static final String MAVEN_CLASS_FOLDER = "/target/classes/";
 
     /**
      * Name of source class
@@ -30,55 +45,47 @@ public class EnablePrivateAccessTranslator extends BaseTranslator {
      */
     private final ListBuffer<Name> sourceClassIns = new ListBuffer<Name>();
     /**
-     * Record private and final fields
+     * Member information of source class
      */
-    private final ListBuffer<String> privateOrFinalFields = new ListBuffer<String>();
-    /**
-     * Record private methods
-     */
-    private final ListBuffer<String> privateMethods = new ListBuffer<String>();
+    private final MemberRecord memberRecord = new MemberRecord();
 
     private final PrivateAccessStatementGenerator privateAccessStatementGenerator;
+    private final PrivateAccessChecker privateAccessChecker;
 
-    public EnablePrivateAccessTranslator(String pkgName, String testClassName, TestableContext cx) {
-        String sourceClass = testClassName.substring(0, testClassName.length() - ConstPool.TEST_POSTFIX.length());
+    public EnablePrivateAccessTranslator(TestableContext cx, Symbol.ClassSymbol clazz, Parameters p) {
+        String sourceClassFullName;
+        if (p.sourceClassName == null) {
+            String testClassFullName = clazz.fullname.toString();
+            sourceClassFullName = testClassFullName.substring(0, testClassFullName.length() - TEST_POSTFIX.length());
+        } else {
+            sourceClassFullName = p.sourceClassName;
+        }
+        String sourceClassShortName = sourceClassFullName.substring(sourceClassFullName.lastIndexOf('.') + 1);
         this.privateAccessStatementGenerator = new PrivateAccessStatementGenerator(cx);
-        this.sourceClassName = cx.names.fromString(sourceClass);
+        this.sourceClassName = cx.names.fromString(sourceClassShortName);
         try {
-            Class<?> cls = null;
-            String sourceClassFullName = pkgName + "." + sourceClass;
-            try {
-                cls = Class.forName(sourceClassFullName);
-            } catch (ClassNotFoundException e) {
-                // fit for gradle build
-                String path = "file:" + System.getProperty("user.dir") + "/build/classes/java/main/";
-                cls = new URLClassLoader(new URL[]{new URL(path)}).loadClass(sourceClassFullName);
-            }
+            Class<?> cls = getSourceClass(clazz, sourceClassFullName);
             if (cls == null) {
-                System.err.println("Failed to load source class: " + sourceClassFullName);
-                return;
-            }
-            Field[] fields = cls.getDeclaredFields();
-            for (Field f : fields) {
-                if (Modifier.isFinal(f.getModifiers()) || Modifier.isPrivate(f.getModifiers())) {
-                    privateOrFinalFields.add(f.getName());
-                }
-            }
-            Method[] methods = cls.getDeclaredMethods();
-            for (Method m : methods) {
-                if (Modifier.isPrivate(m.getModifiers())) {
-                    privateMethods.add(m.getName());
-                }
+                cx.logger.fatal("Failed to load source class \"" + sourceClassFullName + "\"");
+            } else {
+                findAllPrivateMembers(cls);
             }
         } catch (Exception e) {
-            e.printStackTrace();
+            // for any reason, interrupt the compile process
+            cx.logger.fatal("Failed to load source class \"" + sourceClassFullName + "\": " + e);
         }
+        this.privateAccessChecker = (p.verifyTargetExistence == null || p.verifyTargetExistence) ?
+            new PrivateAccessChecker(cx, sourceClassShortName, memberRecord) : null;
     }
 
+    /**
+     * var = d.privateMethod(args) → var = PrivateAccessor.invoke(d, "privateMethod", args)
+     */
     @Override
     public void visitVarDef(JCVariableDecl jcVariableDecl) {
+        jcVariableDecl.init = checkAndExchange(jcVariableDecl.init);
         super.visitVarDef(jcVariableDecl);
-        if (jcVariableDecl.vartype.getClass().equals(JCIdent.class) &&
+        if (jcVariableDecl.vartype instanceof JCIdent &&
             ((JCIdent)jcVariableDecl.vartype).name.equals(sourceClassName)) {
             sourceClassIns.add(jcVariableDecl.name);
         }
@@ -91,7 +98,7 @@ public class EnablePrivateAccessTranslator extends BaseTranslator {
     @Override
     public void visitExec(JCExpressionStatement jcExpressionStatement) {
         // visitExec could be an assign statement to a private field
-        if (jcExpressionStatement.expr.getClass().equals(JCAssign.class)) {
+        if (jcExpressionStatement.expr instanceof JCAssign) {
             MemberType memberType = checkSetterType((JCAssign)jcExpressionStatement.expr);
             if (memberType.equals(MemberType.PRIVATE_OR_FINAL)) {
                 jcExpressionStatement.expr = privateAccessStatementGenerator.fetchSetterStatement(
@@ -136,7 +143,7 @@ public class EnablePrivateAccessTranslator extends BaseTranslator {
     @Override
     protected JCExpression checkAndExchange(JCExpression expr) {
         // check is accessing a private field of source class
-        if (expr.getClass().equals(JCFieldAccess.class)) {
+        if (expr instanceof JCFieldAccess) {
             MemberType memberType = checkGetterType((JCFieldAccess)expr);
             if (memberType.equals(MemberType.PRIVATE_OR_FINAL)) {
                 expr = privateAccessStatementGenerator.fetchGetterStatement((JCFieldAccess)expr);
@@ -145,41 +152,125 @@ public class EnablePrivateAccessTranslator extends BaseTranslator {
             }
         }
         // check is invoking a private method of source class
-        if (expr.getClass().equals(JCMethodInvocation.class)) {
-            MemberType memberType = checkInvokeType((JCMethodInvocation)expr);
+        if (expr instanceof JCMethodInvocation) {
+            JCMethodInvocation invocation = (JCMethodInvocation)expr;
+            MemberType memberType = checkInvokeType(invocation);
             if (memberType.equals(MemberType.PRIVATE_OR_FINAL)) {
-                expr = privateAccessStatementGenerator.fetchInvokeStatement((JCMethodInvocation)expr);
+                expr = privateAccessStatementGenerator.fetchInvokeStatement(invocation);
             } else if (memberType.equals(MemberType.STATIC_PRIVATE)) {
-                expr = privateAccessStatementGenerator.fetchStaticInvokeStatement((JCMethodInvocation)expr);
+                expr = privateAccessStatementGenerator.fetchStaticInvokeStatement(invocation);
             }
+            if (privateAccessChecker != null) {
+                privateAccessChecker.validate((JCMethodInvocation)expr);
+            }
+        }
+        // check the casted expression
+        if (expr instanceof JCTypeCast) {
+            JCTypeCast typeCast = (JCTypeCast)expr;
+            typeCast.expr = checkAndExchange(typeCast.expr);
         }
         return expr;
     }
 
+    private Class<?> getSourceClass(Symbol.ClassSymbol clazz, String sourceClassFullName)
+        throws MalformedURLException, ClassNotFoundException {
+        Class<?> cls;
+        try {
+            // maven build goes here
+            cls = Class.forName(sourceClassFullName);
+        } catch (ClassNotFoundException e) {
+            if (System.getProperty(IDEA_PATHS_SELECTOR) != null) {
+                // fit for intellij build
+                String sourceFileWrapperString = clazz.sourcefile.toString();
+                String sourceFilePath = sourceFileWrapperString.substring(
+                    sourceFileWrapperString.lastIndexOf("[") + 1, sourceFileWrapperString.indexOf("]"));
+                int indexOfSrc = sourceFilePath.lastIndexOf(File.separator + "src" + File.separator);
+                String basePath = sourceFilePath.substring(0, indexOfSrc);
+                try {
+                    String targetFolderPath = PathUtil.fitPathString(basePath + MAVEN_CLASS_FOLDER);
+                    cls = loadClass(targetFolderPath, sourceClassFullName);
+                } catch (ClassNotFoundException e2) {
+                    String buildFolderPath = PathUtil.fitPathString(basePath + GRADLE_CLASS_FOLDER);
+                    cls = loadClass(buildFolderPath, sourceClassFullName);
+                }
+            } else {
+                // fit for gradle build
+                String path = PathUtil.fitPathString("file:" + System.getProperty(USER_DIR) + GRADLE_CLASS_FOLDER);
+                cls = loadClass(path, sourceClassFullName);
+            }
+        }
+        return cls;
+    }
+
+    private Class<?> loadClass(String targetFolderPath, String sourceClassFullName)
+        throws ClassNotFoundException, MalformedURLException {
+        return new URLClassLoader(new URL[] {new URL(targetFolderPath)}).loadClass(sourceClassFullName);
+    }
+
+    private void findAllPrivateMembers(Class<?> cls) {
+        Field[] fields = cls.getDeclaredFields();
+        for (Field f : fields) {
+            if (Modifier.isFinal(f.getModifiers()) || Modifier.isPrivate(f.getModifiers())
+                || Modifier.isProtected(f.getModifiers())) {
+                memberRecord.privateOrFinalFields.add(f.getName());
+            } else {
+                memberRecord.nonPrivateNorFinalFields.add(f.getName());
+            }
+        }
+        Method[] methods = cls.getDeclaredMethods();
+        for (final Method m : methods) {
+            if (Modifier.isPrivate(m.getModifiers()) || Modifier.isProtected(m.getModifiers())) {
+                checkAndAdd(memberRecord.privateMethods, m.getName(), getParameterLength(m));
+            } else {
+                checkAndAdd(memberRecord.nonPrivateMethods, m.getName(), getParameterLength(m));
+            }
+        }
+        if (cls.getSuperclass() != null) {
+            findAllPrivateMembers(cls.getSuperclass());
+        }
+    }
+
+    private void checkAndAdd(Map<String, List<Integer>> map, String key, final int value) {
+        if (map.containsKey(key)) {
+            map.get(key).add(value);
+        } else {
+            map.put(key, new ArrayList<Integer>() {{ add(value); }});
+        }
+    }
+
+    private int getParameterLength(Method m) {
+        int length = m.getParameterTypes().length;
+        if (length == 0) {
+            return 0;
+        }
+        if (m.getParameterTypes()[length - 1].getName().startsWith("[")) {
+            return -(length - 1);
+        } else {
+            return length;
+        }
+    }
+
     private MemberType checkGetterType(JCFieldAccess access) {
-        if (access.selected.getClass().equals(JCIdent.class) &&
-            privateOrFinalFields.contains(access.name.toString())) {
+        if (access.selected instanceof JCIdent && memberRecord.privateOrFinalFields.contains(access.name.toString())) {
             return checkSourceClassOrIns(((JCIdent)access.selected).name);
         }
-        return MemberType.NONE_PRIVATE;
+        return MemberType.NON_PRIVATE;
     }
 
     private MemberType checkSetterType(JCAssign assign) {
-        if (assign.lhs.getClass().equals(JCFieldAccess.class) &&
-            ((JCFieldAccess)(assign).lhs).selected.getClass().equals(JCIdent.class) &&
-            privateOrFinalFields.contains(((JCFieldAccess)(assign).lhs).name.toString())) {
+        if (assign.lhs instanceof JCFieldAccess && ((JCFieldAccess)(assign).lhs).selected instanceof JCIdent &&
+            memberRecord.privateOrFinalFields.contains(((JCFieldAccess)(assign).lhs).name.toString())) {
             return checkSourceClassOrIns(((JCIdent)((JCFieldAccess)(assign).lhs).selected).name);
         }
-        return MemberType.NONE_PRIVATE;
+        return MemberType.NON_PRIVATE;
     }
 
     private MemberType checkInvokeType(JCMethodInvocation expr) {
-        if (expr.meth.getClass().equals(JCFieldAccess.class) &&
-            ((JCFieldAccess)(expr).meth).selected.getClass().equals(JCIdent.class) &&
-            privateMethods.contains(((JCFieldAccess)(expr).meth).name.toString())) {
+        if (expr.meth instanceof JCFieldAccess && ((JCFieldAccess)(expr).meth).selected instanceof JCIdent &&
+            memberRecord.privateMethods.containsKey(((JCFieldAccess)(expr).meth).name.toString())) {
             return checkSourceClassOrIns(((JCIdent)((JCFieldAccess)(expr).meth).selected).name);
         }
-        return MemberType.NONE_PRIVATE;
+        return MemberType.NON_PRIVATE;
     }
 
     private MemberType checkSourceClassOrIns(Name name) {
@@ -188,7 +279,7 @@ public class EnablePrivateAccessTranslator extends BaseTranslator {
         } else if (sourceClassIns.contains(name)) {
             return MemberType.PRIVATE_OR_FINAL;
         }
-        return MemberType.NONE_PRIVATE;
+        return MemberType.NON_PRIVATE;
     }
 
 }

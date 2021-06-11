@@ -1,7 +1,9 @@
 package com.alibaba.testable.core.annotation;
 
-import com.alibaba.testable.core.model.MockDiagnose;
+import com.alibaba.testable.core.model.ClassType;
+import com.alibaba.testable.core.model.LogLevel;
 
+import javax.lang.model.type.NullType;
 import java.lang.annotation.*;
 
 /**
@@ -15,9 +17,15 @@ import java.lang.annotation.*;
 public @interface MockWith {
 
     /**
-     * switch of mock diagnose information of current test class
-     * @return enable or disable
+     * explicitly specify mock class
+     * @return type of mock class
      */
-    MockDiagnose diagnose() default MockDiagnose.DISABLE;
+    Class<?> value() default NullType.class;
+
+    /**
+     * treat current class as a source class or test class
+     * @return type of current class
+     */
+    ClassType treatAs() default ClassType.GuessByName;
 
 }

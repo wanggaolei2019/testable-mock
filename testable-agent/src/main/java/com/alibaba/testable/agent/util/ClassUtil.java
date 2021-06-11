@@ -1,35 +1,23 @@
 package com.alibaba.testable.agent.util;
 
 import com.alibaba.testable.agent.constant.ConstPool;
+import com.alibaba.testable.agent.tool.ImmutablePair;
+import org.objectweb.asm.ClassReader;
+import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 
-import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
-import static org.objectweb.asm.Opcodes.INVOKESTATIC;
+import static com.alibaba.testable.agent.constant.ByteCodeConst.*;
+import static com.alibaba.testable.core.constant.ConstPool.*;
+import static org.objectweb.asm.Opcodes.*;
 
 /**
  * @author flin
  */
 public class ClassUtil {
 
-    public static final byte TYPE_BYTE = 'B';
-    public static final byte TYPE_CHAR = 'C';
-    public static final byte TYPE_DOUBLE = 'D';
-    public static final byte TYPE_FLOAT = 'F';
-    public static final byte TYPE_INT = 'I';
-    public static final byte TYPE_LONG = 'J';
-    public static final byte TYPE_CLASS = 'L';
-    public static final byte TYPE_SHORT = 'S';
-    public static final byte TYPE_BOOL = 'Z';
-    public static final byte TYPE_VOID = 'V';
-    private static final byte PARAM_END = ')';
-    private static final byte CLASS_END = ';';
-    private static final byte TYPE_ARRAY = '[';
-
-    public static final String CLASS_OBJECT = "java/lang/Object";
     private static final String CLASS_BYTE = "java/lang/Byte";
     private static final String CLASS_CHARACTER = "java/lang/Character";
     private static final String CLASS_DOUBLE = "java/lang/Double";
@@ -40,8 +28,19 @@ public class ClassUtil {
     private static final String CLASS_BOOLEAN = "java/lang/Boolean";
     private static final String EMPTY = "";
     private static final String METHOD_VALUE_OF = "valueOf";
+    private static final String METHOD_BYTE_VALUE = "byteValue";
+    private static final String METHOD_CHAR_VALUE = "charValue";
+    private static final String METHOD_DOUBLE_VALUE = "doubleValue";
+    private static final String METHOD_FLOAT_VALUE = "floatValue";
+    private static final String METHOD_INT_VALUE = "intValue";
+    private static final String METHOD_LONG_VALUE = "longValue";
+    private static final String METHOD_SHORT_VALUE = "shortValue";
+    private static final String METHOD_BOOLEAN_VALUE = "booleanValue";
 
     private static final Map<Byte, String> TYPE_MAPPING = new HashMap<Byte, String>();
+    private static final Map<Byte, ImmutablePair<String, String>> WRAPPER_METHOD_MAPPING =
+        new HashMap<Byte, ImmutablePair<String, String>>();
+    private static final Map<String, Integer> RETURN_OP_CODE_MAPPING = new HashMap<String, Integer>();
 
     static {
         TYPE_MAPPING.put(TYPE_BYTE, CLASS_BYTE);
@@ -55,90 +54,114 @@ public class ClassUtil {
         TYPE_MAPPING.put(TYPE_VOID, EMPTY);
     }
 
+    static {
+        WRAPPER_METHOD_MAPPING.put(TYPE_BYTE, ImmutablePair.of(METHOD_BYTE_VALUE, "()" + (char)TYPE_BYTE));
+        WRAPPER_METHOD_MAPPING.put(TYPE_CHAR, ImmutablePair.of(METHOD_CHAR_VALUE, "()" + (char)TYPE_CHAR));
+        WRAPPER_METHOD_MAPPING.put(TYPE_DOUBLE, ImmutablePair.of(METHOD_DOUBLE_VALUE, "()" + (char)TYPE_DOUBLE));
+        WRAPPER_METHOD_MAPPING.put(TYPE_FLOAT, ImmutablePair.of(METHOD_FLOAT_VALUE, "()" + (char)TYPE_FLOAT));
+        WRAPPER_METHOD_MAPPING.put(TYPE_INT, ImmutablePair.of(METHOD_INT_VALUE, "()" + (char)TYPE_INT));
+        WRAPPER_METHOD_MAPPING.put(TYPE_LONG, ImmutablePair.of(METHOD_LONG_VALUE, "()" + (char)TYPE_LONG));
+        WRAPPER_METHOD_MAPPING.put(TYPE_SHORT, ImmutablePair.of(METHOD_SHORT_VALUE, "()" + (char)TYPE_SHORT));
+        WRAPPER_METHOD_MAPPING.put(TYPE_BOOL, ImmutablePair.of(METHOD_BOOLEAN_VALUE, "()" + (char)TYPE_BOOL));
+    }
+
+    static {
+        RETURN_OP_CODE_MAPPING.put(new String(new byte[] {TYPE_BYTE}), IRETURN);
+        RETURN_OP_CODE_MAPPING.put(new String(new byte[] {TYPE_CHAR}), IRETURN);
+        RETURN_OP_CODE_MAPPING.put(new String(new byte[] {TYPE_DOUBLE}), DRETURN);
+        RETURN_OP_CODE_MAPPING.put(new String(new byte[] {TYPE_FLOAT}), FRETURN);
+        RETURN_OP_CODE_MAPPING.put(new String(new byte[] {TYPE_INT}), IRETURN);
+        RETURN_OP_CODE_MAPPING.put(new String(new byte[] {TYPE_LONG}), LRETURN);
+        RETURN_OP_CODE_MAPPING.put(new String(new byte[] {TYPE_SHORT}), IRETURN);
+        RETURN_OP_CODE_MAPPING.put(new String(new byte[] {TYPE_BOOL}), IRETURN);
+    }
+
     /**
-     * fit kotlin companion class name to original name
+     * Fit kotlin companion class name to original name
      * @param name a class name (which could be a companion class)
      * @return is companion class or not
      */
     public static boolean isCompanionClassName(String name) {
-        return name.endsWith("$Companion");
+        return name.endsWith(ConstPool.KOTLIN_POSTFIX_COMPANION);
     }
 
     /**
-     * fit kotlin companion class name to original name
+     * Fit kotlin companion class name to original name
      * @param name a class name (which could be a companion class)
      * @return original name
      */
     public static String fitCompanionClassName(String name) {
-        return name.replaceAll("\\$Companion$", "");
+        return isCompanionClassName(name) ?
+            name.substring(0, name.length() - ConstPool.KOTLIN_POSTFIX_COMPANION.length()) : name;
     }
 
     /**
-     * get test class name from source class name
+     * Fit kotlin accessor method name to original name
+     * @param name a accessor name (which could be a common kotlin method)
+     * @return original name
+     */
+    public static String fitKotlinAccessorName(String name) {
+        return name.startsWith(ConstPool.KOTLIN_PREFIX_ACCESS) ?
+            name.substring(ConstPool.KOTLIN_PREFIX_ACCESS.length()) : name;
+    }
+
+    /**
+     * Get mock class name from source class name
+     * @param sourceClassName source class name
+     * @return mock class name
+     */
+    public static String getMockClassName(String sourceClassName) {
+        return sourceClassName + MOCK_POSTFIX;
+    }
+
+    /**
+     * Get test class name from source class name
      * @param sourceClassName source class name
      * @return test class name
      */
     public static String getTestClassName(String sourceClassName) {
-        return sourceClassName + ConstPool.TEST_POSTFIX;
+        return sourceClassName + TEST_POSTFIX;
     }
 
     /**
-     * get source class name from test class name
+     * Get source class name from test class name
      * @param testClassName test class name
      * @return source class name
      */
     public static String getSourceClassName(String testClassName) {
-        return testClassName.substring(0, testClassName.length() - ConstPool.TEST_POSTFIX.length());
+        return testClassName.substring(0, testClassName.length() - TEST_POSTFIX.length());
     }
 
     /**
-     * parse method desc, fetch parameter types
-     * @param desc method description
-     * @return list of parameter types
+     * Get wrapper class of specified private type
+     * @param primaryType byte code of private type
+     * @return byte code of wrapper class
      */
-    public static List<Byte> getParameterTypes(String desc) {
-        List<Byte> parameterTypes = new ArrayList<Byte>();
-        boolean travelingClass = false;
-        for (byte b : desc.getBytes()) {
-            if (travelingClass) {
-                if (b == CLASS_END) {
-                    travelingClass = false;
-                }
-            } else {
-                if (isPrimaryType(b)) {
-                    parameterTypes.add(b);
-                } else if (b == TYPE_CLASS) {
-                    travelingClass = true;
-                    parameterTypes.add(b);
-                } else if (b == PARAM_END) {
-                    break;
-                }
-            }
-        }
-        return parameterTypes;
+    public static String toWrapperClass(Byte primaryType) {
+        return TYPE_MAPPING.get(primaryType);
     }
 
     /**
-     * parse method desc, fetch return value types
-     * @param desc method description
-     * @return types of return value
+     * Get method name and descriptor to convert wrapper type to primary type
+     * @param primaryType byte code of private type
+     * @return pair of [method-name, method-descriptor]
      */
-    public static String getReturnType(String desc) {
-        int returnTypeEdge = desc.lastIndexOf(PARAM_END);
-        char typeChar = desc.charAt(returnTypeEdge + 1);
-        if (typeChar == TYPE_ARRAY) {
-            return desc.substring(returnTypeEdge + 1);
-        } else if (typeChar == TYPE_CLASS) {
-            return desc.substring(returnTypeEdge + 2, desc.length() - 1);
-        } else if (TYPE_MAPPING.containsKey((byte)typeChar)) {
-            return TYPE_MAPPING.get((byte)typeChar);
-        } else {
-            return EMPTY;
-        }
+    public static ImmutablePair<String, String> getWrapperTypeConvertMethod(byte primaryType) {
+        return WRAPPER_METHOD_MAPPING.get(primaryType);
     }
 
     /**
-     * Get method node to convert primary type to object type
+     * Get byte code for return specified private type
+     * @param type class type
+     * @return byte code of return operation
+     */
+    public static int getReturnOpsCode(String type) {
+        Integer code = RETURN_OP_CODE_MAPPING.get(type);
+        return (code == null) ? ARETURN : code;
+    }
+
+    /**
+     * Get method node to convert primary type to wrapper type
      * @param type primary type to convert
      * @return converter method node
      */
@@ -149,25 +172,25 @@ public class ClassUtil {
     }
 
     /**
-     * convert slash separated name to dot separated name
+     * Convert slash separated name to dot separated name
      * @param name original name
      * @return converted name
      */
     public static String toDotSeparatedName(String name) {
-        return name.replace(ConstPool.SLASH, ConstPool.DOT);
+        return name.replace(SLASH, DOT);
     }
 
     /**
-     * convert dot separated name to slash separated name
+     * Convert dot separated name to slash separated name
      * @param name original name
      * @return converted name
      */
     public static String toSlashSeparatedName(String name) {
-        return name.replace(ConstPool.DOT, ConstPool.SLASH);
+        return name.replace(DOT, SLASH);
     }
 
     /**
-     * convert dot separated name to byte code class name
+     * Convert dot separated name to byte code class name
      * @param className original name
      * @return converted name
      */
@@ -176,29 +199,51 @@ public class ClassUtil {
     }
 
     /**
-     * convert byte code class name to dot separated human readable name
+     * Convert byte code class name to slash separated human readable name
      * @param className original name
      * @return converted name
      */
-    public static String toDotSeparateFullClassName(String className) {
-        return toDotSeparatedName(className).substring(1, className.length() - 1);
+    public static String toSlashSeparateJavaStyleName(String className) {
+        return className.substring(1, className.length() - 1);
     }
 
     /**
-     * convert byte code class name to slash separated human readable name
+     * Convert byte code class name to dot separated human readable name
      * @param className original name
      * @return converted name
      */
-    public static String toSlashSeparateFullClassName(String className) {
-        return toSlashSeparatedName(className).substring(1, className.length() - 1);
+    public static String toJavaStyleClassName(String className) {
+        return toDotSeparatedName(toSlashSeparateJavaStyleName(className));
+    }
+
+    /**
+     * Read class from current context
+     * @param className class name
+     * @return loaded class
+     */
+    public static ClassNode getClassNode(String className) {
+        ClassNode cn = new ClassNode();
+        try {
+            new ClassReader(className).accept(cn, 0);
+        } catch (Throwable e) {
+            // Could be IOException, ClassCircularityError or NullPointerException
+            // Ignore all of them
+            return null;
+        }
+        return cn;
+    }
+
+    /**
+     * Get outer class name from a inner class name
+     * @param name inner class name
+     * @return outer class name
+     */
+    public static String toOuterClassName(String name) {
+        int pos = name.lastIndexOf("$");
+        return (pos > 0) ? name.substring(0, pos) : name;
     }
 
     private static String toDescriptor(Byte type, String objectType) {
         return "(" + (char)type.byteValue() + ")L" + objectType + ";";
-    }
-
-    private static boolean isPrimaryType(byte b) {
-        return b == TYPE_BYTE || b == TYPE_CHAR || b == TYPE_DOUBLE || b == TYPE_FLOAT
-            || b == TYPE_INT || b == TYPE_LONG || b == TYPE_SHORT || b == TYPE_BOOL;
     }
 }

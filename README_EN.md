@@ -7,6 +7,14 @@ Write a mock method, add an `@MockMethod` annotation, everything is done.
 
 Usage Document: https://alibaba.github.io/testable-mock/#/en-us/
 
+## Roadmap
+
+`TestableMock` is still under heavy development, the following version plans may be adjusted during the iteration
+
+- `v0.6` it's the current version, refer to the [issue](https://github.com/alibaba/testable-mock/issues) list for the work in progress
+- `v0.7` better anti-refactoring support of mocking, allow quick mock all method in specified class
+- `v1.0` all functions are stable, a brand-new start
+
 ## Directory Structure
 
 ```bash
@@ -14,8 +22,9 @@ Usage Document: https://alibaba.github.io/testable-mock/#/en-us/
 |-- testable-all          ➜ Dependence aggration, for easily import all modules at once
 |-- testable-processor    ➜ Compile-time code preprocessing module, provides test assist functions
 |-- testable-agent        ➜ JavaAgent module, provides test mocking related functions
-|-- testable-core         ➜ Basic function module, provides Mock related class and annotation
+|-- testable-core         ➜ Basic function module, provides mock related class and annotation
 |-- testable-maven-plugin ➜ Maven plugin module, for simplify JavaAgent injection
+|-- tool                  ➜ Scripts for project maintain
 |-- demo
 |   |-- java-demo         ➜ Java code example
 |   `-- kotlin-demo       ➜ Kotlin code example

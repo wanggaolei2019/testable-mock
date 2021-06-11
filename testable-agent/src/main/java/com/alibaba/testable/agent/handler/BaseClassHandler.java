@@ -5,14 +5,16 @@ import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.tree.ClassNode;
 
-import java.io.IOException;
-
 /**
  * @author flin
  */
 abstract public class BaseClassHandler implements Opcodes {
 
-    public byte[] getBytes(byte[] classFileBuffer) throws IOException {
+    protected static final String GET_TESTABLE_REF = "testableIns";
+    protected static final String VOID_ARGS = "()";
+    protected static final String VOID_RES = "V";
+
+    public byte[] getBytes(byte[] classFileBuffer) {
         ClassReader cr = new ClassReader(classFileBuffer);
         ClassNode cn = new ClassNode();
         cr.accept(cn, 0);

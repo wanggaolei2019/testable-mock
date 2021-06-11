@@ -1,9 +1,9 @@
 Mock Tools Comparison
 ---
 
-Besides `TestableMock`, there are also several other community Mock tools, such as `Mockito`, `Spock`, `PowerMock` and `JMockit`. Comparison as follows:
+Besides `TestableMock`, there are also several other community mock tools, such as `Mockito`, `Spock`, `PowerMock` and `JMockit`. Comparison as follows:
 
-|  Tool        | Mechanism                     | Minimal Mock Unit | Limitation of method be mocked               | Ease of use   | IDE support   |
+|  Tool        | Mechanism                     | Minimal mock unit | Limitation of method be mocked               | Ease of use   | IDE support   |
 |  ----        | ----                          | ----              | ----                                         | ----          | ----          |
 | Mockito      | Dynamic proxy                 | Class             | Except private/static method and constructor | **Easy**      | **Very well** |
 | Spock        | Dynamic proxy                 | Class             | Except private/static method and constructor | Complicate    | Just so so    |
@@ -23,4 +23,4 @@ The functionality of `TestabledMock` is basically the same as that of `PowerMock
 
 The main disadvantage of the current `TestableMock` is that the IDE cannot promptly prompt whether the method parameters are matched correctly when writing the mock method. If the mocking effect does not meet expectation, it has to be verified during runtime through the method provided in the [self-help troubleshooting](en-us/doc/troubleshooting.md) document. This feature needs to be provided by extending IDE plugins in the future.
 
-In addition, because `TestableMock` uses the mock mechanism based on a single method in a unique way, it decouples the mock method definition from the unit test cases. Thus, the mock methods are by default reusable, and the unit test cases become cleaner and purer. On the other hand, the mock methods become fragmented, and life cycle management is relatively difficult. Therefore, it may take some time for developers get used to it.
+In addition, because `TestableMock` uses the mechanism based on "each source class binding to its own mock class" in a unique way, it decouples the mock method definition from the unit test cases. Thus, the mock methods are by default reusable, and the unit test cases become cleaner and purer. On the other hand, the mock methods become fragmented, and life cycle management is relatively difficult. Therefore, it may take some time for developers get used to it.

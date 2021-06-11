@@ -1,8 +1,19 @@
 package com.alibaba.testable.agent.util;
 
+import com.alibaba.testable.agent.constant.ByteCodeConst;
+import com.alibaba.testable.agent.tool.ImmutablePair;
+import com.alibaba.testable.core.util.LogUtil;
+import org.objectweb.asm.tree.AbstractInsnNode;
+import org.objectweb.asm.tree.InsnNode;
+import org.objectweb.asm.tree.IntInsnNode;
+
+import java.io.FileOutputStream;
+import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
 
+import static com.alibaba.testable.core.constant.ConstPool.*;
+import static com.alibaba.testable.core.constant.ConstPool.UNDERLINE;
 import static org.objectweb.asm.Opcodes.*;
 
 /**
@@ -173,8 +184,94 @@ public class BytecodeUtil {
         put(IFNONNULL, -1);
     }};
 
+    /**
+     * Get stack impact of a specified ops code
+     * @param bytecode ops code to check
+     * @return stack change
+     */
     public static int stackEffect(int bytecode) {
         return bytecodeStackEffect.get(bytecode);
     }
 
+    /**
+     * Make sure method has public access
+     * @param access original access mark
+     * @return access mark with public flag
+     */
+    public static int toPublicAccess(int access) {
+        access &= ~ACC_PRIVATE;
+        access &= ~ACC_PROTECTED;
+        access |= ACC_PUBLIC;
+        return access;
+    }
+
+    /**
+     * Dump byte code to specified class file
+     * @param className original class name
+     * @param dumpPath folder to store class file
+     * @param bytes original class bytes
+     */
+    public static void dumpByte(String className, String dumpPath, byte[] bytes) {
+        if (dumpPath == null) {
+            return;
+        }
+        try {
+            String dumpFile = PathUtil.join(dumpPath,
+                className.replace(SLASH, DOT).replace(DOLLAR, UNDERLINE) + ".class");
+            LogUtil.verbose("Dump class: " + dumpFile);
+            FileOutputStream stream = new FileOutputStream(dumpFile);
+            stream.write(bytes);
+            stream.close();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    /**
+     * get load ops-code of specified type
+     * @param type type symbol
+     * @return pair of [ops-code, stack occupation]
+     */
+    public static ImmutablePair<Integer, Integer> getLoadParameterByteCode(Byte type) {
+        switch (type) {
+            case ByteCodeConst.TYPE_BYTE:
+            case ByteCodeConst.TYPE_CHAR:
+            case ByteCodeConst.TYPE_SHORT:
+            case ByteCodeConst.TYPE_INT:
+            case ByteCodeConst.TYPE_BOOL:
+                return ImmutablePair.of(ILOAD, 1);
+            case ByteCodeConst.TYPE_DOUBLE:
+                return ImmutablePair.of(DLOAD, 2);
+            case ByteCodeConst.TYPE_FLOAT:
+                return ImmutablePair.of(FLOAD, 1);
+            case ByteCodeConst.TYPE_LONG:
+                return ImmutablePair.of(LLOAD, 2);
+            default:
+                return ImmutablePair.of(ALOAD, 1);
+        }
+    }
+
+    /**
+     * get ops code of load a int number
+     * @param num number to load
+     * @return ops code
+     */
+    public static AbstractInsnNode getIntInsn(int num) {
+        switch (num) {
+            case 0:
+                return new InsnNode(ICONST_0);
+            case 1:
+                return new InsnNode(ICONST_1);
+            case 2:
+                return new InsnNode(ICONST_2);
+            case 3:
+                return new InsnNode(ICONST_3);
+            case 4:
+                return new InsnNode(ICONST_4);
+            case 5:
+                return new InsnNode(ICONST_5);
+            default:
+                return new IntInsnNode(BIPUSH, num);
+        }
+    }
 }

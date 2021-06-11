@@ -1,16 +1,28 @@
 - 快速上手
   - [使用TestableMock](zh-cn/doc/setup.md)
-  - [直接访问私有成员](zh-cn/doc/private-accessor.md)
   - [快速Mock任意方法](zh-cn/doc/use-mock.md)
+  - [直接访问私有成员](zh-cn/doc/private-accessor.md)
+  - [快速构造复杂入参](zh-cn/doc/omni-constructor.md)
   - [测试无返回值的方法](zh-cn/doc/test-void-method.md)
 
-- 使用参考
+- 使用指南
   - [校验Mock调用](zh-cn/doc/invoke-matcher.md)
+  - [Mock的生效范围](zh-cn/doc/scope-of-mock.md)
+  - [复用Mock类与方法](zh-cn/doc/mock-method-reusing.md)
+  - [使用MockWith注解](zh-cn/doc/use-mock-with.md)
+  - [使用包路径映射](zh-cn/doc/use-package-mapping.md)
   - [常见使用问题](zh-cn/doc/frequently-asked-questions.md)
+  - [Mock线程池内的调用](zh-cn/doc/with-thread-pool.md)
+  - [在IDE运行单元测试](zh-cn/doc/use-in-ide.md)
   - [自助问题排查](zh-cn/doc/troubleshooting.md)
-  - [Testable Maven插件](zh-cn/doc/use-maven-plugin.md)
+  - [使用Maven插件](zh-cn/doc/use-maven-plugin.md)
 
 - 技术参考
+  - [版本升级说明](zh-cn/doc/upgrade-guide.md)
+  - [全局运行参数](zh-cn/doc/javaagent-args.md)
+  - [注解参数清单](zh-cn/doc/annotations.md)
+  - [Mock的设计和原理](zh-cn/doc/design-and-mechanism.md)
   - [主流Mock工具对比](zh-cn/doc/comparation.md)
-  - [Release Note](zh-cn/doc/release-note.md)
+  - [版本更新](zh-cn/doc/release-note.md)
+  - [关于我们](zh-cn/doc/about-us.md)
   - [问题反馈](zh-cn/doc/feedback.md)

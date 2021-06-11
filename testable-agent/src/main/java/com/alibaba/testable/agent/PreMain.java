@@ -1,9 +1,15 @@
 package com.alibaba.testable.agent;
 
+import com.alibaba.testable.agent.config.ArgumentParser;
+import com.alibaba.testable.agent.config.PropertiesParser;
 import com.alibaba.testable.agent.transformer.TestableClassTransformer;
+import com.alibaba.testable.agent.util.GlobalConfig;
 import com.alibaba.testable.core.util.LogUtil;
+import com.alibaba.ttl.threadpool.agent.TtlAgent;
 
 import java.lang.instrument.Instrumentation;
+
+import static com.alibaba.testable.agent.constant.ConstPool.PROPERTY_USER_DIR;
 
 /**
  * Agent entry, dynamically modify the byte code of classes under testing
@@ -11,48 +17,27 @@ import java.lang.instrument.Instrumentation;
  */
 public class PreMain {
 
-    private static final String AND = "&";
-    private static final String MUTE = "mute";
-    private static final String DEBUG = "debug";
-    private static final String VERBOSE = "verbose";
-    private static final String LOG_LEVEL = "logLevel";
-    private static final String EQUAL = "=";
-
     public static void premain(String agentArgs, Instrumentation inst) {
-        parseArgs(agentArgs);
+        ArgumentParser.parseArgs(agentArgs);
+        PropertiesParser.parseFile(ArgumentParser.configFilePath);
+        GlobalConfig.setupLogRootPath();
+        LogUtil.info("TestableMock start at %s", System.getProperty(PROPERTY_USER_DIR));
+        if (GlobalConfig.enhanceThreadLocal) {
+            // add transmittable thread local transformer
+            TtlAgent.premain(agentArgs, inst);
+        }
+        // add testable mock transformer
         inst.addTransformer(new TestableClassTransformer());
+        cleanup();
     }
 
-    private static void parseArgs(String args) {
-        if (args == null) {
-            return;
-        }
-        for (String a : args.split(AND)) {
-            int i = a.indexOf(EQUAL);
-            if (i > 0) {
-                String k = a.substring(0, i);
-                String v = a.substring(i + 1);
-                if (k.equals(LOG_LEVEL)) {
-                    setLogLevel(v);
-                }
-            } else {
-                setLogLevel(a);
+    private static void cleanup() {
+        Runtime.getRuntime().addShutdownHook(new Thread() {
+            @Override
+            public void run() {
+                LogUtil.cleanup();
             }
-        }
-    }
-
-    private static boolean setLogLevel(String level) {
-        if (level.equals(MUTE)) {
-            LogUtil.setDefaultLevel(LogUtil.LogLevel.LEVEL_MUTE);
-            return true;
-        } else if (level.equals(DEBUG)) {
-            LogUtil.setDefaultLevel(LogUtil.LogLevel.LEVEL_DIAGNOSE);
-            return true;
-        } else if (level.equals(VERBOSE)) {
-            LogUtil.setDefaultLevel(LogUtil.LogLevel.LEVEL_VERBOSE);
-            return true;
-        }
-        return false;
+        });
     }
 
 }
